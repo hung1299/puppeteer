@@ -1,13 +1,15 @@
 {
-  "name": "puppeteer",
-  "version": "1.0.0",
-  "main": "index.js",
-  "license": "MIT",
-  "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
-  },
-  "dependencies": {
-    "puppeteer": "^17.1.1"
-  }
+    "name": "puppeteer",
+    "version": "1.0.0",
+    "main": "index.js",
+    "license": "MIT",
+    "scripts": {
+        "start": "node index.js"
+    },
+    "dependencies": {
+        "axios": "^0.27.2",
+        "html-to-text": "^8.2.1",
+        "puppeteer": "^17.1.1"
+    },
+    "devDependencies": {}
 }
