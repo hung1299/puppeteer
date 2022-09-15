@@ -1,5 +1,5 @@
 const { convert } = require("html-to-text");
-const { LINK_TYPE, IMAGE_TYPE, TEXT_TYPE } = require("./utils/constant");
+const { LINK_TYPE, IMAGE_TYPE, TEXT_TYPE } = require("../utils/constant");
 
 const parseHtml = (htmlContent) => {
     const text = convert(htmlContent, {

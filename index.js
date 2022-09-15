@@ -1,7 +1,7 @@
 const puppeteer = require("puppeteer");
 const fs = require("fs");
-const { handleFillImage } = require("./src/handleFillImage");
-const { handleFillLink } = require("./src/handleFillLink");
+const { handleFillImage } = require("./src/handleContent/handleFillImage");
+const { handleFillLink } = require("./src/handleContent/handleFillLink");
 const {
     TEXT_TYPE,
     LINK_TYPE,
@@ -16,7 +16,7 @@ const {
     goToPageWithUrl,
     groupBy,
 } = require("./src/utils/utils");
-const { formatHtmlString } = require("./src/parseHtmlContent");
+const { formatHtmlString } = require("./src/handleContent/parseHtmlContent");
 const { callApi } = require("./src/api");
 
 const handleFillContent = async (content, page) => {
@@ -93,8 +93,13 @@ const createPost = async (page, post, isPageIdNull = false) => {
     }
     await Promise.all([submitBtn.click(), page.waitForNavigation()]);
 };
-
 const auto = async (profile) => {
+    if (!fs.existsSync(getAbsoluteUrl("./user-data"))) {
+        fs.mkdirSync(getAbsoluteUrl("./user-data"));
+    }
+    if (!fs.existsSync(getAbsoluteUrl("./images"))) {
+        fs.mkdirSync(getAbsoluteUrl("./images"));
+    }
     const browser = await puppeteer.launch({
         headless: false,
         args: [
