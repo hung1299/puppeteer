@@ -1,7 +1,7 @@
 const path = require("path");
 const { NETWORK_STATUS } = require("./constant");
 
-exports.getAbsoluteUrl = (url) => {
+exports.getAbsolutePath = (url) => {
     return path.resolve(url);
 };
 

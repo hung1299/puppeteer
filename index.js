@@ -1,5 +1,6 @@
 const puppeteer = require("puppeteer");
 const fs = require("fs");
+const moment = require("moment");
 const { handleFillImage } = require("./src/handleContent/handleFillImage");
 const { handleFillLink } = require("./src/handleContent/handleFillLink");
 const {
@@ -10,7 +11,7 @@ const {
     BASE_URL,
 } = require("./src/utils/constant");
 const {
-    getAbsoluteUrl,
+    getAbsolutePath,
     getBaseBlogURL,
     getPageContext,
     goToPageWithUrl,
@@ -18,6 +19,7 @@ const {
 } = require("./src/utils/utils");
 const { formatHtmlString } = require("./src/handleContent/parseHtmlContent");
 const { callApi } = require("./src/api");
+const PATH = __dirname;
 
 const handleFillContent = async (content, page) => {
     switch (content.type) {
@@ -93,19 +95,18 @@ const createPost = async (page, post, isPageIdNull = false) => {
     }
     await Promise.all([submitBtn.click(), page.waitForNavigation()]);
 };
+
 const auto = async (profile) => {
-    if (!fs.existsSync(getAbsoluteUrl("./user-data"))) {
-        fs.mkdirSync(getAbsoluteUrl("./user-data"));
+    if (!fs.existsSync(`${PATH}/user-data`)) {
+        fs.mkdirSync(`${PATH}/user-data`);
     }
-    if (!fs.existsSync(getAbsoluteUrl("./images"))) {
-        fs.mkdirSync(getAbsoluteUrl("./images"));
+    if (!fs.existsSync(`${PATH}/images`)) {
+        fs.mkdirSync(`${PATH}/images`);
     }
     const browser = await puppeteer.launch({
         headless: false,
         args: [
-            `--user-data-dir=${getAbsoluteUrl(
-                "./user-data/" + profile.cmsCategory
-            )}`,
+            `--user-data-dir=${PATH}/user-data/${profile.cmsCategory}`,
             "--disable-web-security",
             "--disable-features=IsolateOrigins",
             "--disable-site-isolation-trials",
@@ -120,6 +121,15 @@ const auto = async (profile) => {
     await page.goto("https://manage.wix.com/account/sites", {
         waitUntil: NETWORK_STATUS,
     });
+
+    if (page.url().indexOf("users.wix.com") > -1) {
+        console.log(
+            `Need to log in at ${profile.username} with cmsCategory ${profile.cmsCategory}`
+        );
+        browser.close();
+        return;
+    }
+
     const sitesData = await page.$$("div[data-hook=site-list-item]");
     for (const site of sitesData) {
         const name = await site.$eval(
@@ -162,7 +172,7 @@ const auto = async (profile) => {
                             pageContext,
                             baseURL + "create-post"
                         );
-                        await createPost(pageContext, post, true);
+                        await createPost(pageContext, post, false);
                     }
                 } catch (error) {
                     console.log("something wrong with post: ", post);
@@ -175,7 +185,7 @@ const auto = async (profile) => {
     }
     await goToPageWithUrl(page, baseURL + "posts");
     await page.screenshot({
-        path: getAbsoluteUrl(`./images/${profile.cmsCategory}.png`),
+        path: `${PATH}/images/${profile.cmsCategory}.png`,
         fullPage: true,
     });
     page.off("dialog");
@@ -183,12 +193,11 @@ const auto = async (profile) => {
 };
 
 const main = async () => {
-    // run at 1:00 AM ?
-    let date = new Date();
-    console.log("Start at " + date.toISOString());
-    date.setDate(date.getDate() - 1);
-    date = date.toISOString().slice(0, 10);
-
+    let date = new moment();
+    console.log("Start at " + date.format("hh:mm:ss A YYYY-MM-DD"));
+    // 2022-09-15
+    date = date.add(-1, "days").format("YYYY-MM-DD");
+    date = "2022-09-01";
     let cmsData = await callApi({
         url: "/wp-json/v1/check-wix-posts?timeString=" + date,
         baseURl: BASE_URL,
@@ -198,7 +207,7 @@ const main = async () => {
         console.log("Nothing to post");
         return;
     }
-    const rawData = fs.readFileSync(getAbsoluteUrl("./src/data/profile.json"));
+    const rawData = fs.readFileSync(`${PATH}/src/data/profile.json`);
     let profile = JSON.parse(rawData);
     cmsData = cmsData
         .filter((data) => data.category.length > 0)
@@ -216,6 +225,7 @@ const main = async () => {
         profiles.push(profileItem);
     }
     for (const profileData of profiles) {
+        console.log("number posts: ", profileData.posts.length);
         try {
             await auto(profileData);
         } catch (error) {
@@ -223,8 +233,8 @@ const main = async () => {
             console.log("error: ", error);
         }
     }
-    const doneDate = new Date();
-    console.log("Done at " + doneDate.toISOString());
+    let doneDate = new moment();
+    console.log("Start at " + doneDate.format("hh:mm:ss A YYYY-MM-DD"));
 };
 
 main();
