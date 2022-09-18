@@ -9,6 +9,7 @@ exports.H6_TYPE = "h6_tag";
 exports.IMAGE_TYPE = "image";
 exports.LINK_TYPE = "link";
 
-exports.BASE_URL = "http://localhost";
-// exports.BASE_URL = "https://pbn.passemall.com";
+// exports.BASE_URL = "http://localhost";
+exports.BASE_URL = "https://pbn.passemall.com";
 exports.HTTP_REQUEST_SUCCESS = 200;
+exports.HTTP_REQUEST_CREATE_SUCCESS = 201;

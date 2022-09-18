@@ -35,6 +35,15 @@ const parseHtml = (htmlContent) => {
                 builder.addInline(",");
                 builder.addInline('"url":');
                 builder.addInline(`"${elem.attribs.src}"`);
+                builder.addInline(",");
+                builder.addInline('"alt":');
+                builder.addInline(`"${elem.attribs.alt}"`);
+                builder.addInline(",");
+                builder.addInline('"width":');
+                builder.addInline(`"${elem.attribs.width}"`);
+                builder.addInline(",");
+                builder.addInline('"height":');
+                builder.addInline(`"${elem.attribs.height}"`);
                 builder.addInline("}");
             },
             h2BlockFormatter: function (elem, walk, builder, formatOptions) {
@@ -118,7 +127,7 @@ const parseHtml = (htmlContent) => {
                 format: "h6BlockFormatter",
             },
         ],
-    });
+    }); 
     return text.split("\n").filter(t => t.length !== 0);
 };
 

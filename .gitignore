@@ -2,5 +2,4 @@ images
 node_modules
 user-data
 
-src/data/profile.json
-src/data/profile-backup.json
+src/data
