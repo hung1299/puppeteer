@@ -14,7 +14,6 @@ const {
     H5_TYPE,
     H6_TYPE,
     HTTP_REQUEST_SUCCESS,
-    HTTP_REQUEST_CREATE_SUCCESS,
 } = require("./src/utils/constant");
 const {
     getBaseBlogURL,
@@ -27,6 +26,8 @@ const { callApi } = require("./src/api");
 const { handleFillText } = require("./src/handleContent/handleFillText");
 const PATH = __dirname;
 const HEADER_TYPE = [H2_TYPE, H3_TYPE, H4_TYPE, H5_TYPE, H6_TYPE];
+const WIX_API_POSTS =
+    "https://manage.wix.com/_api/communities-blog-node-api/_api/posts";
 
 const handleFillContent = async (content, page) => {
     switch (content.type) {
@@ -61,7 +62,7 @@ const updatePost = async (page, post) => {
     await page.keyboard.press("a");
     await page.keyboard.up("Control");
     await page.keyboard.press("Delete");
-    await createPost(page, post);
+    await createPost(page, post, false);
 };
 
 const createPost = async (page, post, isPageIdNull = false) => {
@@ -85,19 +86,15 @@ const createPost = async (page, post, isPageIdNull = false) => {
         }
         await page.keyboard.press("Enter");
     }
+
+    const { id: post_wix_id } = await page
+        .waitForResponse(
+            (response) =>
+                response.status() === HTTP_REQUEST_SUCCESS &&
+                response.url().includes(WIX_API_POSTS)
+        )
+        .then((response) => response.json());
     if (isPageIdNull) {
-        const data = await page
-            .waitForResponse(
-                (response) =>
-                    response.status() === HTTP_REQUEST_CREATE_SUCCESS &&
-                    response
-                        .url()
-                        .includes(
-                            "https://manage.wix.com/_api/communities-blog-node-api/_api/posts"
-                        )
-            )
-            .then((response) => response.json());
-        const post_wix_id = data.id;
         await callApi({
             url: "/wp-json/v1/save-wix-data",
             baseURl: BASE_URL,
@@ -107,16 +104,7 @@ const createPost = async (page, post, isPageIdNull = false) => {
                 fieldData: post_wix_id,
             },
         });
-    } else {
-        await page.waitForResponse(
-            (response) =>
-                response.status() === HTTP_REQUEST_SUCCESS &&
-                response
-                    .url()
-                    .includes(
-                        "https://manage.wix.com/_api/communities-blog-node-api/_api/posts"
-                    )
-        );
+        console.log(`post_wix_id updated`);
     }
     const submitBtn = await page.waitForSelector(
         "[data-hook='topbar-publish-button'][aria-disabled='false']",
@@ -181,34 +169,34 @@ const auto = async (profile) => {
     }
 
     await goToPageWithUrl(page, baseURL + "posts");
-    await page.waitForSelector(".sevtth");
-    let pageContainerElement = await page.$(".sevtth");
-    let pageNodes = await pageContainerElement.$$(":scope > *");
     const listPostsId = await page.$$eval("tr[data-hook]", (nodes) =>
         nodes.map((node) => {
             const text = node.getAttribute("data-hook");
             return text.slice(text.indexOf("item-") + 5);
         })
     );
-    if (pageNodes.length && pageNodes.length > 1) {
-        for (let index = 1; index < pageNodes.length; index++) {
-            await pageNodes[index].click();
-            await page.waitForResponse(
-                (response) =>
-                    response.status() === 200 &&
-                    response
-                        .url()
-                        .includes(
-                            "https://manage.wix.com/_api/communities-blog-node-api/_api/posts"
-                        )
-            );
-            const newListPosts = await page.$$eval("tr[data-hook]", (nodes) =>
-                nodes.map((node) => {
-                    const text = node.getAttribute("data-hook");
-                    return text.slice(text.indexOf("item-") + 5);
-                })
-            );
-            listPostsId.push(...newListPosts);
+    let pageContainerElement = await page.$(".sevtth");
+    if (pageContainerElement) {
+        let pageNodes = await pageContainerElement.$$(":scope > *");
+
+        if (pageNodes.length && pageNodes.length > 1) {
+            for (let index = 1; index < pageNodes.length; index++) {
+                await pageNodes[index].click();
+                await page.waitForResponse(
+                    (response) =>
+                        response.status() === 200 &&
+                        response.url().includes(WIX_API_POSTS)
+                );
+                const newListPosts = await page.$$eval(
+                    "tr[data-hook]",
+                    (nodes) =>
+                        nodes.map((node) => {
+                            const text = node.getAttribute("data-hook");
+                            return text.slice(text.indexOf("item-") + 5);
+                        })
+                );
+                listPostsId.push(...newListPosts);
+            }
         }
     }
 
@@ -243,6 +231,7 @@ const auto = async (profile) => {
             });
 
         await Promise.all(requests);
+        console.log(`${i + 1}/${profile.posts.length}`);
     }
     await goToPageWithUrl(page, baseURL + "posts");
     await page.screenshot({
@@ -255,9 +244,10 @@ const auto = async (profile) => {
 
 const main = async () => {
     let date = new moment();
-    console.log("Start at " + date.format("hh:mm:ss A YYYY-MM-DD"));
+    const DATE_FORMAT = "hh:mm:ss A YYYY-MM-DD";
+    console.log("Start at " + date.format(DATE_FORMAT));
     date = date.add(-1, "days").format("YYYY-MM-DD");
-    // date = "2020-09-01"; // for testing
+    // date = "2020-09-01"; // get all posts
     let cmsData = await callApi({
         url: "/wp-json/v1/check-wix-posts?timeString=" + date,
         baseURl: BASE_URL,
@@ -298,7 +288,7 @@ const main = async () => {
         }
     }
     let doneDate = new moment();
-    console.log("Start at " + doneDate.format("hh:mm:ss A YYYY-MM-DD"));
+    console.log("Start at " + doneDate.format(DATE_FORMAT));
 };
 
 main();

@@ -1,5 +1,3 @@
-const { addRangeToText } = require("./addRangeToText");
-
 const handleFillLink = async (linkItem, page) => {
     await page.keyboard.sendCharacter(linkItem.text);
     await page.evaluate(async (linkItem) => {
@@ -8,8 +6,18 @@ const handleFillLink = async (linkItem, page) => {
             return;
         }
         const textNode = dataText[dataText.length - 1].childNodes[0];
+        const text = linkItem.text;
 
-        addRangeToText({ document, window, textNode, text: linkItem.text });
+        const range = document.createRange();
+        const selection = window.getSelection();
+        const startIndex = textNode.wholeText.lastIndexOf(text);
+        const endIndex = startIndex + text.length;
+
+        range.setStart(textNode, startIndex);
+        range.setEnd(textNode, endIndex);
+
+        selection.removeAllRanges();
+        selection.addRange(range);
     }, linkItem);
 
     await page.waitForSelector("[data-hook='LinkButton']").then(async () => {
