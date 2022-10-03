@@ -104,7 +104,7 @@ const createPost = async (page, post, isPageIdNull = false) => {
                 fieldData: post_wix_id,
             },
         });
-        console.log(`post_wix_id updated`);
+        // console.log(`post_wix_id updated`);
     }
     const submitBtn = await page.waitForSelector(
         "[data-hook='topbar-publish-button'][aria-disabled='false']",
@@ -121,11 +121,10 @@ const auto = async (profile) => {
     if (!fs.existsSync(`${PATH}/images`)) {
         fs.mkdirSync(`${PATH}/images`);
     }
-    const username = profile.username.slice(0, profile.username.indexOf("@"));
     const browser = await puppeteer.launch({
         headless: false,
         args: [
-            `--user-data-dir=${PATH}/user-data/${username}`,
+            `--user-data-dir=${PATH}/user-data/${profile.cmsCategory}`,
             "--disable-web-security",
             "--disable-features=IsolateOrigins",
             "--disable-site-isolation-trials",
@@ -141,11 +140,12 @@ const auto = async (profile) => {
         waitUntil: NETWORK_STATUS,
     });
     if (page.url().indexOf("users.wix.com") > -1) {
-        console.log(
-            `Need to login for user: ${username} with cmsCategory: ${profile.cmsCategory}`
-        );
+        console.log('Need to login to profile: ');
+        console.log("\x1b[41m%s\x1b[0m", profile.cmsCategory);
+        console.log(`username: ${profile.username}`);
+        console.log(`password: ${profile.password}`);
         // Handle login
-        await page.waitForTimeout(1000000);
+        // await page.waitForTimeout(1000000);
         browser.close();
         return;
     }
@@ -175,16 +175,17 @@ const auto = async (profile) => {
             return text.slice(text.indexOf("item-") + 5);
         })
     );
-    let pageContainerElement = await page.$(".sevtth");
+    let pageContainerElement = await page.$("[data-hook=page-strip]");
     if (pageContainerElement) {
-        let pageNodes = await pageContainerElement.$$(":scope > *");
+        let nodeParent = await pageContainerElement.$(":scope > *");
+        let pageNodes = await nodeParent.$$(":scope > *");
 
         if (pageNodes.length && pageNodes.length > 1) {
             for (let index = 1; index < pageNodes.length; index++) {
                 await pageNodes[index].click();
                 await page.waitForResponse(
                     (response) =>
-                        response.status() === 200 &&
+                        response.status() === HTTP_REQUEST_SUCCESS &&
                         response.url().includes(WIX_API_POSTS)
                 );
                 const newListPosts = await page.$$eval(
@@ -201,6 +202,7 @@ const auto = async (profile) => {
     }
 
     const MAX_PAGE_HANDLE = 1;
+    let countPostsSuccess = 0;
     for (let i = 0; i < profile.posts.length; i += MAX_PAGE_HANDLE) {
         const requests = profile.posts
             .slice(i, i + MAX_PAGE_HANDLE)
@@ -224,15 +226,22 @@ const auto = async (profile) => {
                         await createPost(pageContext, post, true);
                     }
                 } catch (error) {
-                    console.log("something wrong with post: ", post);
+                    console.log(
+                        "\x1b[41m%s\x1b[0m",
+                        "something wrong with post: ",
+                        post.title,
+                        post.ID,
+                        post.link
+                    );
                     console.log("error: ", error);
                 }
                 await pageContext.close();
             });
 
         await Promise.all(requests);
-        console.log(`${i + 1}/${profile.posts.length}`);
+        countPostsSuccess++;
     }
+    console.log(`${countPostsSuccess}/${profile.posts.length}`);
     await goToPageWithUrl(page, baseURL + "posts");
     await page.screenshot({
         path: `${PATH}/images/${profile.cmsCategory}.png`,
@@ -247,7 +256,7 @@ const main = async () => {
     const DATE_FORMAT = "hh:mm:ss A YYYY-MM-DD";
     console.log("Start at " + date.format(DATE_FORMAT));
     date = date.add(-1, "days").format("YYYY-MM-DD");
-    // date = "2020-09-01"; // get all posts
+    date = "2002-09-01"; // get all posts
     let cmsData = await callApi({
         url: "/wp-json/v1/check-wix-posts?timeString=" + date,
         baseURl: BASE_URL,
@@ -275,10 +284,11 @@ const main = async () => {
         profiles.push(profileItem);
     }
     profiles = profiles.filter(
-        (profile) => profile.cmsCategory === "tangerineflorida"
+        (profile) =>
+            profile.cmsCategory && profile.cmsCategory !== "uncategorized"
     );
-    console.log(profiles);
     for (const profileData of profiles) {
+        console.log("-----------------------------------------------");
         console.log("number posts: ", profileData.posts.length);
         try {
             await auto(profileData);
@@ -288,6 +298,7 @@ const main = async () => {
         }
     }
     let doneDate = new moment();
+    console.log("-----------------------------------------------");
     console.log("Start at " + doneDate.format(DATE_FORMAT));
 };
 
