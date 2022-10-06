@@ -1,5 +1,6 @@
 images
 node_modules
 user-data
+logs
 
 src/data

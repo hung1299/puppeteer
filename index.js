@@ -1,12 +1,12 @@
 const puppeteer = require("puppeteer");
 const fs = require("fs");
 const moment = require("moment");
+const { EmbedBuilder } = require("discord.js");
 const { handleFillImage } = require("./src/handleContent/handleFillImage");
 const { handleFillLink } = require("./src/handleContent/handleFillLink");
 const {
     LINK_TYPE,
     IMAGE_TYPE,
-    NETWORK_STATUS,
     BASE_URL,
     H2_TYPE,
     H3_TYPE,
@@ -14,16 +14,13 @@ const {
     H5_TYPE,
     H6_TYPE,
     HTTP_REQUEST_SUCCESS,
+    DISCORD_ID,
 } = require("./src/utils/constant");
-const {
-    getBaseBlogURL,
-    getPageContext,
-    goToPageWithUrl,
-    groupBy,
-} = require("./src/utils/utils");
+const { goToPageWithUrl, groupBy } = require("./src/utils/utils");
 const { formatHtmlString } = require("./src/handleContent/parseHtmlContent");
 const { callApi } = require("./src/api");
 const { handleFillText } = require("./src/handleContent/handleFillText");
+const { DiscordConfig } = require("./src/utils/discordConfig");
 const PATH = __dirname;
 const HEADER_TYPE = [H2_TYPE, H3_TYPE, H4_TYPE, H5_TYPE, H6_TYPE];
 const WIX_API_POSTS =
@@ -104,7 +101,6 @@ const createPost = async (page, post, isPageIdNull = false) => {
                 fieldData: post_wix_id,
             },
         });
-        // console.log(`post_wix_id updated`);
     }
     const submitBtn = await page.waitForSelector(
         "[data-hook='topbar-publish-button'][aria-disabled='false']",
@@ -117,9 +113,6 @@ const createPost = async (page, post, isPageIdNull = false) => {
 const auto = async (profile) => {
     if (!fs.existsSync(`${PATH}/user-data`)) {
         fs.mkdirSync(`${PATH}/user-data`);
-    }
-    if (!fs.existsSync(`${PATH}/images`)) {
-        fs.mkdirSync(`${PATH}/images`);
     }
     const browser = await puppeteer.launch({
         headless: false,
@@ -136,39 +129,25 @@ const auto = async (profile) => {
     page.on("dialog", async (dialog) => {
         await dialog.accept();
     });
-    await page.goto("https://manage.wix.com/account/sites", {
-        waitUntil: NETWORK_STATUS,
-    });
-    if (page.url().indexOf("users.wix.com") > -1) {
-        console.log('Need to login to profile: ');
-        console.log("\x1b[41m%s\x1b[0m", profile.cmsCategory);
-        console.log(`username: ${profile.username}`);
-        console.log(`password: ${profile.password}`);
-        // Handle login
-        // await page.waitForTimeout(1000000);
-        browser.close();
-        return;
-    }
     let baseURL = "";
-    if (!profile.pageWixId) {
-        const sitesData = await page.$$("div[data-hook=site-list-item]");
-        for (const site of sitesData) {
-            const name = await site.$eval(
-                "span[data-hook=site-list-item-name]",
-                (e) => e.textContent
-            );
-            if (profile.cmsCategory === name) {
-                await site.click();
-                page = await getPageContext(browser, page);
-                break;
-            }
-        }
-        baseURL = await getBaseBlogURL(page);
-    } else {
-        baseURL = `https://manage.wix.com/dashboard/${profile.pageWixId}/blog/`;
+
+    baseURL = `https://manage.wix.com/dashboard/${profile.pageWixId}/blog/`;
+    await goToPageWithUrl(page, baseURL + "posts");
+
+    if (page.url().indexOf("users.wix.com") > -1) {
+        const embeds = await new EmbedBuilder()
+            .setColor("Red")
+            .setTitle(`Need to login to profile`)
+            .setDescription(profile.cmsCategory)
+            .setTimestamp();
+        await DiscordConfig.getInstance().sendMessage({
+            messageEmbed: embeds,
+            userID: DISCORD_ID,
+        });
+        browser.close();
+        return [];
     }
 
-    await goToPageWithUrl(page, baseURL + "posts");
     const listPostsId = await page.$$eval("tr[data-hook]", (nodes) =>
         nodes.map((node) => {
             const text = node.getAttribute("data-hook");
@@ -183,26 +162,22 @@ const auto = async (profile) => {
         if (pageNodes.length && pageNodes.length > 1) {
             for (let index = 1; index < pageNodes.length; index++) {
                 await pageNodes[index].click();
-                await page.waitForResponse(
-                    (response) =>
-                        response.status() === HTTP_REQUEST_SUCCESS &&
-                        response.url().includes(WIX_API_POSTS)
-                );
-                const newListPosts = await page.$$eval(
-                    "tr[data-hook]",
-                    (nodes) =>
-                        nodes.map((node) => {
-                            const text = node.getAttribute("data-hook");
-                            return text.slice(text.indexOf("item-") + 5);
-                        })
-                );
-                listPostsId.push(...newListPosts);
+                const res = await page
+                    .waitForResponse(
+                        (response) =>
+                            response.status() === HTTP_REQUEST_SUCCESS &&
+                            response.url().includes(WIX_API_POSTS + "?offset")
+                    )
+                    .then((response) => response.json());
+                const ids = res.map((d) => d.id);
+                listPostsId.push(...ids);
             }
         }
     }
 
     const MAX_PAGE_HANDLE = 1;
     let countPostsSuccess = 0;
+    const postFailed = [];
     for (let i = 0; i < profile.posts.length; i += MAX_PAGE_HANDLE) {
         const requests = profile.posts
             .slice(i, i + MAX_PAGE_HANDLE)
@@ -211,7 +186,7 @@ const auto = async (profile) => {
                 try {
                     if (
                         post.post_wix_id &&
-                        listPostsId.indexOf(post.post_wix_id) > -1
+                        listPostsId.indexOf(post.post_wix_id) < -1
                     ) {
                         await goToPageWithUrl(
                             pageContext,
@@ -223,35 +198,41 @@ const auto = async (profile) => {
                             pageContext,
                             baseURL + "create-post"
                         );
-                        await createPost(pageContext, post, true);
+                        await createPost(pageContext, post, false);
                     }
+                    countPostsSuccess++;
                 } catch (error) {
                     console.log(
                         "\x1b[41m%s\x1b[0m",
                         "something wrong with post: ",
-                        post.title,
-                        post.ID,
-                        post.link
+                        post.post_title
                     );
-                    console.log("error: ", error);
+                    console.log("ID: ", post.ID);
+                    console.log("origin link: ", post.link);
+                    // console.log("error: ", error);
+                    postFailed.push(post);
                 }
                 await pageContext.close();
             });
 
         await Promise.all(requests);
-        countPostsSuccess++;
     }
     console.log(`${countPostsSuccess}/${profile.posts.length}`);
-    await goToPageWithUrl(page, baseURL + "posts");
-    await page.screenshot({
-        path: `${PATH}/images/${profile.cmsCategory}.png`,
-        fullPage: true,
-    });
     page.off("dialog");
     browser.close();
+    return postFailed;
 };
 
 const main = async () => {
+    try {
+        await DiscordConfig.getInstance().init();
+    } catch (err) {
+        console.log("xxxx", err);
+    }
+
+    if (!fs.existsSync(`${PATH}/logs`)) {
+        fs.mkdirSync(`${PATH}/logs`);
+    }
     let date = new moment();
     const DATE_FORMAT = "hh:mm:ss A YYYY-MM-DD";
     console.log("Start at " + date.format(DATE_FORMAT));
@@ -264,7 +245,7 @@ const main = async () => {
     });
     if (cmsData.length === 0) {
         console.log("Nothing to post");
-        return;
+        process.exit();
     }
     const rawData = fs.readFileSync(`${PATH}/src/data/profile.json`);
     let profile = JSON.parse(rawData);
@@ -287,19 +268,84 @@ const main = async () => {
         (profile) =>
             profile.cmsCategory && profile.cmsCategory !== "uncategorized"
     );
+
+    let profileFailed = [];
     for (const profileData of profiles) {
         console.log("-----------------------------------------------");
         console.log("number posts: ", profileData.posts.length);
         try {
-            await auto(profileData);
+            const postFailed = await auto(profileData);
+            if (postFailed.length > 0) {
+                profileFailed.push({
+                    ...profileData,
+                    posts: postFailed.reverse(),
+                });
+            }
         } catch (error) {
             console.log("run fail with user: ", profileData.username);
             console.log("error: ", error);
         }
     }
+
+    const TIME_TRY = 1;
     let doneDate = new moment();
+    if (profileFailed.length !== 0) {
+        for (let count = 0; count < TIME_TRY; count++) {
+            console.log("Try time: ", count + 1);
+            if (profileFailed.length === 0) {
+                break;
+            }
+            for (let index = 0; index < profileFailed.length; index++) {
+                const posts = profileFailed[index].posts;
+                console.log("-----------------------------------------------");
+                console.log("number posts: ", posts.length);
+                try {
+                    const postFailed = await auto(profileFailed[index]);
+                    profileFailed[index].posts = postFailed;
+                } catch (error) {
+                    console.log(
+                        "run fail with user: ",
+                        profileFailed[index].username
+                    );
+                    console.log("error: ", error);
+                }
+            }
+
+            profileFailed = profileFailed.filter((p) => p.posts.length > 0);
+        }
+
+        if (profileFailed.length > 0) {
+            // send discord message to notice post failed
+            const requests = profileFailed.map(async (p) => {
+                let message = "";
+                p.posts.forEach((post) => {
+                    message += `title: ${post.post_title}\rlink: ${post.link}\r\r`;
+                });
+                const embeds = new EmbedBuilder()
+                    .setColor("Red")
+                    .setTitle(`Posts failed with category:   ${p.cmsCategory}`)
+                    .setDescription(message)
+                    .setTimestamp();
+                await DiscordConfig.getInstance().sendMessage({
+                    messageEmbed: embeds,
+                    userID: DISCORD_ID,
+                    spam: true,
+                });
+            });
+
+            await Promise.all(requests);
+            fs.writeFileSync(
+                `${PATH}/logs/posts-failed-${doneDate.format(
+                    "DD-MM-YYYY"
+                )}.json`,
+                JSON.stringify(profileFailed)
+            );
+        }
+    }
+
     console.log("-----------------------------------------------");
-    console.log("Start at " + doneDate.format(DATE_FORMAT));
+    console.log("End at " + doneDate.format(DATE_FORMAT));
+    process.exit();
 };
 
 main();
