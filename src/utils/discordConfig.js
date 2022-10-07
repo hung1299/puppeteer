@@ -1,6 +1,5 @@
 const { Client, GatewayIntentBits } = require("discord.js");
-const { NEW_BOT_TOKEN } = require("./constant");
-
+require("dotenv").config();
 class DiscordConfig {
     static instance = null;
     static getInstance() {
@@ -22,7 +21,7 @@ class DiscordConfig {
     });
 
     init() {
-        this.client.login(NEW_BOT_TOKEN);
+        this.client.login(process.env.NEW_BOT_TOKEN);
         this.client.on("ready", async () => {
             console.log(`Logged in as ${this.client.user.tag}!`);
         });

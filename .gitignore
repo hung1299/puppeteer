@@ -2,5 +2,6 @@ images
 node_modules
 user-data
 logs
+.env
 
 src/data

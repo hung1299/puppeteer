@@ -10,6 +10,10 @@ const main = async () => {
         console.log("Thieu ten profile");
         return;
     }
+    if(!isFillLink){
+        await page.waitForTimeout(2000000);
+        return;
+    }
     const rawData = fs.readFileSync(`${PATH}/src/data/profile.json`);
     let profiles = JSON.parse(rawData);
     const { username, password } = profiles[profileName];
@@ -40,19 +44,20 @@ const main = async () => {
             await page.click("input[name=password]");
             await page.keyboard.sendCharacter(password);
         });
-        await page.click("button[name=submit]");
+        await Promise.all([
+            page.click("button[name=submit]"),
+            page.waitForNavigation({
+                timeout: 1000000,
+                waitUntil: NETWORK_STATUS,
+            }),
+            page.waitForResponse((response) => response.url() === "https://manage.wix.com/_api/wix-user-preferences-webapp/set")
+        ])
     }
-
-    await page.waitForNavigation({
-        timeout: 1000000,
-        waitUntil: NETWORK_STATUS,
-    });
-
-    await page.waitForTimeout(4000);
+    
     console.log("Login success");
     page.off("dialog");
     browser.close();
     return;
-};
+};;
 
 main();

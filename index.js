@@ -1,7 +1,7 @@
 const puppeteer = require("puppeteer");
 const fs = require("fs");
 const moment = require("moment");
-const { EmbedBuilder } = require("discord.js");
+require("dotenv").config();
 const { handleFillImage } = require("./src/handleContent/handleFillImage");
 const { handleFillLink } = require("./src/handleContent/handleFillLink");
 const {
@@ -14,13 +14,12 @@ const {
     H5_TYPE,
     H6_TYPE,
     HTTP_REQUEST_SUCCESS,
-    DISCORD_ID,
 } = require("./src/utils/constant");
 const { goToPageWithUrl, groupBy } = require("./src/utils/utils");
 const { formatHtmlString } = require("./src/handleContent/parseHtmlContent");
 const { callApi } = require("./src/api");
 const { handleFillText } = require("./src/handleContent/handleFillText");
-const { DiscordConfig } = require("./src/utils/discordConfig");
+const { sendMessageWebHook } = require("./src/utils/sendMessageWebHook");
 const PATH = __dirname;
 const HEADER_TYPE = [H2_TYPE, H3_TYPE, H4_TYPE, H5_TYPE, H6_TYPE];
 const WIX_API_POSTS =
@@ -40,40 +39,44 @@ const handleFillContent = async (content, page) => {
     }
 };
 
-const updatePost = async (page, post) => {
-    await page
+const updatePost = async ({ pageContext, post }) => {
+    await pageContext
         .waitForSelector("textarea[data-hook='post-form__title-input']")
         .then(async () => {
-            await page.click("textarea[data-hook='post-form__title-input']");
-            await page.keyboard.down("Control");
-            await page.keyboard.press("a");
-            await page.keyboard.up("Control");
-            await page.keyboard.press("Delete");
+            await pageContext.click(
+                "textarea[data-hook='post-form__title-input']"
+            );
+            await pageContext.keyboard.down("Control");
+            await pageContext.keyboard.press("a");
+            await pageContext.keyboard.up("Control");
+            await pageContext.keyboard.press("Delete");
         });
 
-    await page.click("[data-hook='post-form__content']");
-    await page.keyboard.down("Control");
-    await page.keyboard.press("a");
-    await page.keyboard.up("Control");
-    await page.keyboard.down("Control");
-    await page.keyboard.press("a");
-    await page.keyboard.up("Control");
-    await page.keyboard.press("Delete");
-    await createPost(page, post, false);
+    await pageContext.click("[data-hook='post-form__content']");
+    await pageContext.keyboard.down("Control");
+    await pageContext.keyboard.press("a");
+    await pageContext.keyboard.up("Control");
+    await pageContext.keyboard.down("Control");
+    await pageContext.keyboard.press("a");
+    await pageContext.keyboard.up("Control");
+    await pageContext.keyboard.press("Delete");
+    await postContent({ pageContext: pageContext, post: post });
 };
 
-const createPost = async (page, post, isPageIdNull = false) => {
-    await page
+const postContent = async ({ pageContext, post, isPageIdNull = false }) => {
+    await pageContext
         .waitForSelector("textarea[data-hook='post-form__title-input']")
         .then(async () => {
-            await page.click("textarea[data-hook='post-form__title-input']");
-            await page.keyboard.sendCharacter(post.post_title);
+            await pageContext.click(
+                "textarea[data-hook='post-form__title-input']"
+            );
+            await pageContext.keyboard.sendCharacter(post.post_title);
         });
     const pageContent = formatHtmlString(post.post_content);
-    await page.click("[data-hook='post-form__content']");
+    await pageContext.click("[data-hook='post-form__content']");
     for (const content of pageContent) {
         for (const data of content) {
-            await handleFillContent(data, page);
+            await handleFillContent(data, pageContext);
         }
         if (
             content.length > 0 &&
@@ -81,10 +84,10 @@ const createPost = async (page, post, isPageIdNull = false) => {
         ) {
             continue;
         }
-        await page.keyboard.press("Enter");
+        await pageContext.keyboard.press("Enter");
     }
 
-    const { id: post_wix_id } = await page
+    const { id: post_wix_id } = await pageContext
         .waitForResponse(
             (response) =>
                 response.status() === HTTP_REQUEST_SUCCESS &&
@@ -93,8 +96,7 @@ const createPost = async (page, post, isPageIdNull = false) => {
         .then((response) => response.json());
     if (isPageIdNull) {
         await callApi({
-            url: "/wp-json/v1/save-wix-data",
-            baseURl: BASE_URL,
+            url: BASE_URL + "/wp-json/v1/save-wix-data",
             params: {
                 ID: post.ID,
                 field: "post_wix_id",
@@ -102,12 +104,12 @@ const createPost = async (page, post, isPageIdNull = false) => {
             },
         });
     }
-    const submitBtn = await page.waitForSelector(
+    const submitBtn = await pageContext.waitForSelector(
         "[data-hook='topbar-publish-button'][aria-disabled='false']",
         { timeout: 200000 }
     );
-    await Promise.all([submitBtn.click(), page.waitForNavigation()]);
-    await page.waitForTimeout(1000);
+    await Promise.all([submitBtn.click(), pageContext.waitForNavigation()]);
+    await pageContext.waitForTimeout(1000);
 };
 
 const auto = async (profile) => {
@@ -135,14 +137,9 @@ const auto = async (profile) => {
     await goToPageWithUrl(page, baseURL + "posts");
 
     if (page.url().indexOf("users.wix.com") > -1) {
-        const embeds = await new EmbedBuilder()
-            .setColor("Red")
-            .setTitle(`Need to login to profile`)
-            .setDescription(profile.cmsCategory)
-            .setTimestamp();
-        await DiscordConfig.getInstance().sendMessage({
-            messageEmbed: embeds,
-            userID: DISCORD_ID,
+        await sendMessageWebHook({
+            username: "Error pbn",
+            content: "Need to login to profile: " + profile.cmsCategory,
         });
         browser.close();
         return [];
@@ -192,13 +189,17 @@ const auto = async (profile) => {
                             pageContext,
                             baseURL + post.post_wix_id + "/edit"
                         );
-                        await updatePost(pageContext, post);
+                        await updatePost({ pageContext, post });
                     } else {
                         await goToPageWithUrl(
                             pageContext,
                             baseURL + "create-post"
                         );
-                        await createPost(pageContext, post, false);
+                        await postContent({
+                            pageContext,
+                            post,
+                            isPageIdNull: true,
+                        });
                     }
                     countPostsSuccess++;
                 } catch (error) {
@@ -209,7 +210,7 @@ const auto = async (profile) => {
                     );
                     console.log("ID: ", post.ID);
                     console.log("origin link: ", post.link);
-                    // console.log("error: ", error);
+                    console.log("error: ", error);
                     postFailed.push(post);
                 }
                 await pageContext.close();
@@ -224,12 +225,6 @@ const auto = async (profile) => {
 };
 
 const main = async () => {
-    try {
-        await DiscordConfig.getInstance().init();
-    } catch (err) {
-        console.log("xxxx", err);
-    }
-
     if (!fs.existsSync(`${PATH}/logs`)) {
         fs.mkdirSync(`${PATH}/logs`);
     }
@@ -239,8 +234,7 @@ const main = async () => {
     date = date.add(-1, "days").format("YYYY-MM-DD");
     date = "2002-09-01"; // get all posts
     let cmsData = await callApi({
-        url: "/wp-json/v1/check-wix-posts?timeString=" + date,
-        baseURl: BASE_URL,
+        url: BASE_URL + "/wp-json/v1/check-wix-posts?timeString=" + date,
         method: "GET",
     });
     if (cmsData.length === 0) {
@@ -287,7 +281,7 @@ const main = async () => {
         }
     }
 
-    const TIME_TRY = 1;
+    const TIME_TRY = 3;
     let doneDate = new moment();
     if (profileFailed.length !== 0) {
         for (let count = 0; count < TIME_TRY; count++) {
@@ -319,17 +313,13 @@ const main = async () => {
             const requests = profileFailed.map(async (p) => {
                 let message = "";
                 p.posts.forEach((post) => {
-                    message += `title: ${post.post_title}\rlink: ${post.link}\r\r`;
+                    message += `ID: ${post.ID}\rTitle: ${post.post_title}\rOrigin link: <${post.link}>\r\r`;
                 });
-                const embeds = new EmbedBuilder()
-                    .setColor("Red")
-                    .setTitle(`Posts failed with category:   ${p.cmsCategory}`)
-                    .setDescription(message)
-                    .setTimestamp();
-                await DiscordConfig.getInstance().sendMessage({
-                    messageEmbed: embeds,
-                    userID: DISCORD_ID,
-                    spam: true,
+                await sendMessageWebHook({
+                    username: "Error pbn",
+                    content:
+                        `Posts failed with category: ${p.cmsCategory}\r>>> ` +
+                        message,
                 });
             });
 
